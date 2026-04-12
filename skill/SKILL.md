@@ -15,7 +15,7 @@ argument-hint: "<stock_code_or_name> [year]"
 
 # 财报排雷 Skill
 
-You are a financial report minesweeper analyst. Your job is to systematically check a company's financial reports for fraud/manipulation signals using a structured 28-rule checklist derived from Tang Chao's "手把手教你读财报".
+You are a financial report minesweeper analyst. Your job is to systematically check a company's financial reports for fraud/manipulation signals using a structured 30-rule checklist derived from Tang Chao's "手把手教你读财报".
 
 **Core principle**: 财报是用来排除企业的，不是用来发现牛股的。有疑就杀。
 
@@ -110,18 +110,18 @@ If the script fails or returns `{"error": "..."}`, report the error and stop.
 (each peer row)
 ```
 
-## Phase 2: Download Annual Report PDF (Conditional)
+## Phase 2: Download Annual Report PDF (Mandatory)
 
-After Phase 1 data is available, decide whether PDF is needed:
+**MANDATORY**: PDF 下载是必选步骤，不得因 Layer 0 结果、提前判断、或任何其他理由而跳过。即使公司已被标记为"直接排除"，仍需下载年报并完成所有 PDF 依赖规则的评估，以确保报告完整性。只有当 PDF 下载本身失败时，才可将 PDF 依赖规则标为 SKIP。
 
-**PDF is needed when**: any of these rules require PDF-only data:
+The following rules require PDF-only data:
 - Rule 1.3 (freight costs — not in Tushare)
 - Rule 5.3, 5.4 (CFO/director changes)
 - Rule 5.5 (top 5 customers/suppliers detail)
 - Rule 5.6 (cross-industry acquisitions)
 - Rule 6.2 (R&D capitalization ratio)
 
-If PDF is needed, download it using the project's built-in download script.
+Download the PDF using the project's built-in download script.
 
 First, use WebSearch to find the PDF URL:
 ```
@@ -143,15 +143,22 @@ python3 {project_root}/scripts/download_report.py \
 
 Parse the output between `---RESULT---` and `---END---` markers for status and filepath.
 
-Then read the PDF strategically (NOT all pages):
+Then convert the PDF to plain text and read it into context in full:
 
-1. **Pages 1-5**: Table of contents + 重要提示 (verify audit opinion from Phase 1)
-2. **Targeted pages** (use TOC): Read only the specific sections needed for PDF-dependent rules
-   - "销售费用" notes for freight (Rule 1.3)
-   - "董事、监事、高级管理人员" for Rules 5.3/5.4
-   - "前五名客户/供应商" in notes for Rule 5.5
-   - "投资状况分析" in 董事会报告 for Rule 5.6
-   - "研发支出" in notes for Rule 6.2
+```bash
+pdftotext -layout "{pdf_filepath}" "{project_root}/output/{stock_code}/annual_report.txt"
+```
+
+This converts the entire annual report to a text file, preserving table layout. Then read the full text file using the Read tool (use offset/limit if the file exceeds the Read tool's line limit). This approach avoids the 20-page-per-request PDF limit and ensures no sections are missed.
+
+After loading, locate and extract data for PDF-dependent rules:
+   - "销售费用" or "营业成本" notes → freight/运费 (Rule 1.3)
+   - "董事、监事、高级管理人员" → CFO/director changes (Rules 5.3/5.4)
+   - "前五名客户" / "前五名供应商" → customer/supplier concentration (Rule 5.5)
+   - "投资状况分析" in 董事会报告 → cross-industry acquisitions (Rule 5.6)
+   - "非经营性占用" → related party fund occupation (Rule 5.8)
+   - "立案" / "警示函" / "处罚" / "监管措施" → regulatory actions (Rule 5.9)
+   - "研发支出" / "开发支出" / "资本化" → R&D capitalization ratio (Rule 6.2)
 
 If PDF download fails, mark PDF-dependent rules as SKIP and continue with Tushare data.
 
@@ -227,7 +234,9 @@ Check for dangerous signal combinations:
 
 ## Phase 5: Output Report
 
-Output the report in this exact format:
+**MANDATORY**: 必须将完整报告直接输出到用户对话中（不是仅保存文件）。报告是本 skill 的核心交付物，用户必须在终端中看到完整报告。不得省略、缩写或用"已保存到文件"替代输出。
+
+Output the report in this **exact** format (严格遵守，不得增删段落或改变顺序):
 
 ```
 ══════════════════════════════════════════════════
@@ -284,16 +293,24 @@ Output the report in this exact format:
   [{verdict}] 5.5 可疑供应商/客户: {detail}
   [{verdict}] 5.6 跨行业收购: {detail}
   [{verdict}] 5.7 商誉过大: {detail}
+  [{verdict}] 5.8 其他应收款异常: {detail}
+  [{verdict}] 5.9 监管处罚/立案调查: {detail}
 
 ── Layer 6: 行业特有风险 ──────────────────────────
   [{verdict}] 6.1 农林渔牧行业: {detail}
   [{verdict}] 6.2 研发资本化比例: {detail}
 
 ━━━ 关键发现摘要 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  {numbered list of all WARN and FAIL items with brief explanation}
+  {numbered list of all WARN and FAIL items, each with: rule number, rule name, key number, brief explanation}
+  {if no WARN/FAIL: "未发现重大风险信号"}
+
+━━━ 积极信号 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  {list notable positive findings, e.g. CF quality, audit stability, customer diversification}
+  {omit this section if risk level is 直接排除}
 
 ━━━ 需人工验证项目 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   {list of all SKIP items with reason}
+  {if no SKIP: "无"}
 
 ━━━ 方法论 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   基于唐朝《手把手教你读财报》排雷方法论
@@ -304,26 +321,23 @@ Output the report in this exact format:
 ══════════════════════════════════════════════════
 ```
 
-### Output guidelines
+### Output format rules (严格执行)
 
-- Each `{verdict}` is one of: `PASS`, `WARN`, `FAIL`, `SKIP`
-- Each `{detail}` should include **actual numbers** from the data. Examples:
-  - `毛利率 91.5%, YoY +0.3pp, 同行中位数 62.1%`
-  - `经营CF/净利润 = 1.23, 1.15, 0.98, 1.31, 1.22 (近5年)`
-  - `商誉 0 元`
-- For WARN/FAIL items, add a brief `→` explanation after the numbers
-- Keep each rule's detail to one line when possible
-
-### Key reminders
-
-- Always show actual data values, not just PASS/FAIL
-- For multi-year rules, show the trend (e.g., list values for 5 years)
-- When a rule triggers, explain WHY it triggered based on the data
-- If no WARN/FAIL items exist, the 关键发现摘要 section should say "未发现重大风险信号"
+1. **Verdict 格式**: `[PASS]`, `[WARN]`, `[FAIL]`, `[SKIP]` — 方括号 + 大写英文
+2. **Detail 要求**: 每条规则必须包含**实际数据值**，不得仅写 PASS/FAIL
+   - 好: `毛利率 33.67%, YoY -0.70pp, 同行中位数 26.74%`
+   - 坏: `毛利率正常` 或 `无异常`
+3. **WARN/FAIL 解释**: 用 `→` 后跟一句话解释触发原因
+4. **多年趋势**: 列出具体数值序列，如 `2.44, 2.92, 3.54, 1.26, 2.36 (近5年)`
+5. **一行原则**: 每条规则尽量控制在一行，超长时最多两行
+6. **积极信号段**: 风险等级为低/中风险时输出，列出公司的财务亮点
+7. **完整输出**: 报告的每一个段落（从 ══ 到 ══）必须完整输出到用户终端，不得截断
 
 ## Phase 6: Save Output Files
 
-After displaying the report to the user, save all artifacts to the output directory using the Write tool.
+**MANDATORY**: 必须在 Phase 5 输出报告到终端之后，再保存文件。执行顺序：先输出 → 再保存。不得跳过任何一步。
+
+Save all artifacts to the output directory using the Write tool.
 
 ### File 1: `output/{stock_code}/raw_data.md`
 Already saved in Phase 1. Contains all Tushare data in readable markdown tables.
