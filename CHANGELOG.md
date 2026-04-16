@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.1 — 2026-04-16
+
+### 下载工具优化
+- download-report Skill 搜索策略改为多轮：Round 1 巨潮资讯网 (cninfo.com.cn) → Round 2 雪球 stockn → Round 3 通用搜索
+- cninfo.com.cn 搜索优先使用公司名称（巨潮搜索效果更好），stock code 作为 fallback
+- download_report.py 新增 cninfo.com.cn URL 白名单支持
+- CLAUDE.md 同步更新 URL 限制说明
+
+---
+
 ## v1.1 — 2026-04-12
 
 基于得润电子(002055)和喜临门(603008)的实测反馈，修复盲区并优化流程。

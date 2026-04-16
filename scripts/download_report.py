@@ -2,12 +2,12 @@
 """
 财报PDF下载工具 (Financial Report PDF Downloader)
 
-从 stockn.xueqiu.com 或 notice.10jqka.com.cn 下载A股/港股财报PDF文件。
+从 cninfo.com.cn、stockn.xueqiu.com 或 notice.10jqka.com.cn 下载A股/港股财报PDF文件。
 支持年报、中报、一季报、三季报。
 
 Usage:
     python3 scripts/download_report.py \
-        --url "https://stockn.xueqiu.com/.../report.pdf" \
+        --url "https://static.cninfo.com.cn/.../report.pdf" \
         --stock-code SH600887 \
         --report-type 年报 \
         --year 2024 \
@@ -46,7 +46,7 @@ BASE_HEADERS = {
 }
 
 URL_PATTERN = re.compile(
-    r"^https?://(stockn\.xueqiu\.com|[\w.-]*10jqka\.com\.cn)/.+\.pdf$",
+    r"^https?://([\w.-]*cninfo\.com\.cn|stockn\.xueqiu\.com|[\w.-]*10jqka\.com\.cn)/.+\.pdf$",
     re.IGNORECASE,
 )
 
@@ -54,7 +54,9 @@ URL_PATTERN = re.compile(
 def get_headers(url):
     """Return headers with Referer matching the URL domain."""
     headers = dict(BASE_HEADERS)
-    if "10jqka.com.cn" in url:
+    if "cninfo.com.cn" in url:
+        headers["Referer"] = "https://www.cninfo.com.cn/"
+    elif "10jqka.com.cn" in url:
         headers["Referer"] = "https://10jqka.com.cn/"
     else:
         headers["Referer"] = "https://xueqiu.com/"
@@ -63,10 +65,10 @@ def get_headers(url):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Download financial report PDF from stockn.xueqiu.com or 10jqka.com.cn"
+        description="Download financial report PDF from cninfo.com.cn, stockn.xueqiu.com, or 10jqka.com.cn"
     )
     parser.add_argument(
-        "--url", required=True, help="PDF URL from stockn.xueqiu.com or 10jqka.com.cn"
+        "--url", required=True, help="PDF URL from cninfo.com.cn, stockn.xueqiu.com, or 10jqka.com.cn"
     )
     parser.add_argument(
         "--stock-code", required=True, help="Stock code (e.g. SH600887, 00700)"
@@ -96,7 +98,7 @@ def validate_url(url):
     if not URL_PATTERN.match(url):
         return False, (
             f"Invalid URL: {url}\n"
-            "URL must be a .pdf link from stockn.xueqiu.com or 10jqka.com.cn"
+            "URL must be a .pdf link from cninfo.com.cn, stockn.xueqiu.com, or 10jqka.com.cn"
         )
     return True, ""
 
